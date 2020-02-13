@@ -16,7 +16,6 @@ const { sendSiteMetadata } = require('./src/siteMetadata')
 const {
   createErrorMiddleware,
   logStreamDisconnectWarning,
-  makeThenable,
 } = require('./src/utils')
 
 // resolve response.result, reject errors
@@ -43,9 +42,6 @@ module.exports = class MetamaskInpageProvider extends SafeEventEmitter {
         experimentalMethods: false,
         isConnected: false,
         sendAsync: false,
-        // TODO:deprecate:2020-Q1
-        autoReload: false,
-        sendSync: false,
       },
       isConnected: undefined,
       accounts: undefined,
@@ -63,7 +59,6 @@ module.exports = class MetamaskInpageProvider extends SafeEventEmitter {
     this._handleAccountsChanged = this._handleAccountsChanged.bind(this)
     this._handleDisconnect = this._handleDisconnect.bind(this)
     this._sendAsync = this._sendAsync.bind(this)
-    this._sendSync = this._sendSync.bind(this)
     this.enable = this.enable.bind(this)
     this.send = this.send.bind(this)
     this.sendAsync = this.sendAsync.bind(this)
@@ -120,7 +115,6 @@ module.exports = class MetamaskInpageProvider extends SafeEventEmitter {
       if ('chainId' in state && state.chainId !== this.chainId) {
         this.chainId = state.chainId
         this.emit('chainChanged', this.chainId)
-        this.emit('chainIdChanged', this.chainId) // TODO:deprecate:2020-Q1
       }
 
       // Emit networkChanged event on network change
@@ -185,25 +179,6 @@ module.exports = class MetamaskInpageProvider extends SafeEventEmitter {
 
     // indicate that we've connected, for EIP-1193 compliance
     setTimeout(() => this.emit('connect'))
-
-    // TODO:deprecate:2020-Q1
-    this._web3Ref = undefined
-
-    // TODO:deprecate:2020-Q1
-    // give the dapps control of a refresh they can toggle this off on the window.ethereum
-    // this will be default true so it does not break any old apps.
-    this.autoRefreshOnNetworkChange = true
-
-    // TODO:deprecate:2020-Q1
-    // wait a second to attempt to send this, so that the warning can be silenced
-    // moved this here because there's another warning in .enable() discouraging
-    // the use thereof per EIP 1102
-    setTimeout(() => {
-      if (this.autoRefreshOnNetworkChange && !this._state.sentWarnings.autoReload) {
-        log.warn(messages.warnings.autoReloadDeprecation)
-        this._state.sentWarnings.autoReload = true
-      }
-    }, 1000)
   }
 
   /**
@@ -240,24 +215,8 @@ module.exports = class MetamaskInpageProvider extends SafeEventEmitter {
       !Array.isArray(methodOrPayload)
     ) {
 
-      // TODO:deprecate:2020-Q1
-      // handle send(object, callback), an alias for sendAsync(object, callback)
-      if (typeof params === 'function') {
-        return this._sendAsync(methodOrPayload, params)
-      }
-
       payload = methodOrPayload
 
-      // TODO:deprecate:2020-Q1
-      // backwards compatibility: "synchronous" methods
-      if (!params && [
-        'eth_accounts',
-        'eth_coinbase',
-        'eth_uninstallFilter',
-        'net_version',
-      ].includes(payload.method)) {
-        return this._sendSync(payload)
-      }
     } else if (
       typeof methodOrPayload === 'string' &&
       typeof params !== 'function'
@@ -283,7 +242,7 @@ module.exports = class MetamaskInpageProvider extends SafeEventEmitter {
       !payload ||
       typeof payload !== 'object' ||
       Array.isArray(payload) ||
-      !Array.isArray(params)
+      !Array.isArray(payload.params)
     ) {
       throw ethErrors.rpc.invalidRequest({
         message: messages.errors.invalidParams(),
@@ -341,49 +300,6 @@ module.exports = class MetamaskInpageProvider extends SafeEventEmitter {
       this._state.sentWarnings.sendAsync = true
     }
     this._sendAsync(payload, cb)
-  }
-
-  /**
-   * TODO:deprecate:2020-Q1
-   * Internal backwards compatibility method.
-   */
-  _sendSync (payload) {
-
-    if (!this._state.sentWarnings.sendSync) {
-      log.warn(messages.warnings.sendSyncDeprecation)
-      this._state.sentWarnings.sendSync = true
-    }
-
-    let result
-    switch (payload.method) {
-
-      case 'eth_accounts':
-        result = this.selectedAddress ? [this.selectedAddress] : []
-        break
-
-      case 'eth_coinbase':
-        result = this.selectedAddress || null
-        break
-
-      case 'eth_uninstallFilter':
-        this._sendAsync(payload, () => {})
-        result = true
-        break
-
-      case 'net_version':
-        result = this.networkVersion || null
-        break
-
-      default:
-        throw new Error(messages.errors.unsupportedSync(payload.method))
-    }
-
-    // looks like a plain object, but behaves like a Promise if someone calls .then on it :evil_laugh:
-    return makeThenable({
-      id: payload.id,
-      jsonrpc: payload.jsonrpc,
-      result,
-    }, 'result')
   }
 
   /**
@@ -473,18 +389,6 @@ module.exports = class MetamaskInpageProvider extends SafeEventEmitter {
     if (this.selectedAddress !== accounts[0]) {
       this.selectedAddress = accounts[0] || null
     }
-
-    // TODO:deprecate:2020-Q1
-    // handle web3
-    if (this._web3Ref) {
-      this._web3Ref.defaultAccount = this.selectedAddress
-    } else if (
-      window.web3 &&
-      window.web3.eth &&
-      typeof window.web3.eth === 'object'
-    ) {
-      window.web3.eth.defaultAccount = this.selectedAddress
-    }
   }
 }
 
@@ -532,32 +436,6 @@ function getExperimentalApi (instance) {
             reject(error)
           }
         })
-      },
-
-      // TODO:deprecate:2020-Q1 isEnabled, isApproved
-      /**
-       * Deprecated. Will be removed in Q1 2020.
-       * Synchronously determines if this domain is currently enabled, with a potential false negative if called to soon
-       *
-       * @returns {boolean} - returns true if this domain is currently enabled
-       */
-      isEnabled: () => {
-        return Array.isArray(instance._state.accounts) && instance._state.accounts.length > 0
-      },
-
-      /**
-       * Deprecated. Will be removed in Q1 2020.
-       * Asynchronously determines if this domain is currently enabled
-       *
-       * @returns {Promise<boolean>} - Promise resolving to true if this domain is currently enabled
-       */
-      isApproved: async () => {
-        if (instance._state.accounts === undefined) {
-          await new Promise(
-            (resolve) => instance.once('accountsChanged', () => resolve()),
-          )
-        }
-        return Array.isArray(instance._state.accounts) && instance._state.accounts.length > 0
       },
     },
     {
