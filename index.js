@@ -9,6 +9,7 @@ const SafeEventEmitter = require('safe-event-emitter')
 const dequal = require('fast-deep-equal')
 const { ethErrors } = require('eth-json-rpc-errors')
 const log = require('loglevel')
+const connectCapnode = require('./src/connectCapnode')
 
 const messages = require('./src/messages')
 const { sendSiteMetadata } = require('./src/siteMetadata')
@@ -75,6 +76,22 @@ module.exports = class MetamaskInpageProvider extends SafeEventEmitter {
       connectionStream,
       this._handleDisconnect.bind(this, 'MetaMask'),
     )
+
+    // setup capnode
+    const capStream = mux.createStream('cap')
+    const [ capnode, capRemote ] = connectCapnode()
+    pump(
+      capRemote,
+      capStream,
+      capRemote,
+      (err) => {
+        console.error('Problem with cap stream', err)
+      }
+    )
+
+    this.requestIndex = () => {
+      return capnode.requestIndex(capRemote)
+    }
 
     // subscribe to metamask public config (one-way)
     this._publicConfigStore = new ObservableStore({ storageKey: 'MetaMask-Config' })
