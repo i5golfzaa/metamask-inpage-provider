@@ -217,6 +217,10 @@ module.exports = class MetamaskInpageProvider extends SafeEventEmitter {
 
       payload = methodOrPayload
 
+      if (payload.params === undefined) {
+        payload.params = []
+      }
+
     } else if (
       typeof methodOrPayload === 'string' &&
       typeof params !== 'function'
