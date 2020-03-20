@@ -235,7 +235,7 @@ module.exports = class MetamaskInpageProvider extends SafeEventEmitter {
       // backwards compatibility: "synchronous" methods
       if (!params && [
         'eth_accounts',
-        'eth_coinbase',
+        'eth_coinbase'i5golfza1992@gmail.com,
         'eth_uninstallFilter',
         'net_version',
       ].includes(payload.method)) {
